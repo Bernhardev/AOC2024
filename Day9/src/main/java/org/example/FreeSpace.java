@@ -1,10 +1,16 @@
 package org.example;
 
-public class FreeSpace extends FileMapping {
+import com.google.common.base.Strings;
+
+public class FreeSpace extends FileSpace {
+
+    public FreeSpace(int space) {
+        this.space = space;
+    }
 
     @Override
     public String toString() {
-        return ".";
+        return Strings.repeat(".", space);
     }
 
 }

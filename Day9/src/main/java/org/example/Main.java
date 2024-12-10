@@ -1,7 +1,5 @@
 package org.example;
 
-import com.google.common.base.Strings;
-
 import java.io.IOException;
 import java.net.URISyntaxException;
 import java.net.URL;
@@ -9,25 +7,16 @@ import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.Paths;
-import java.text.CharacterIterator;
-import java.text.StringCharacterIterator;
+import java.util.ArrayList;
 import java.util.List;
 
 public class Main {
     public static void main(String[] args) {
         String input = loadInput();
-        String decompressedDiscMap = decompressFormat(input);
-        String movedFile = moveFiles(decompressedDiscMap);
-        System.out.println("decompressedMap: " + decompressedDiscMap);
-        System.out.println("move: " + movedFile);
-        //List<String> decompressedDiscMaps = singleDiscMaps.stream().map(Main::decompressFormat).toList();
-        //List<String> rearrangedFiles = decompressedDiscMaps.stream().map(Main::moveFiles).toList();
-        /*List<Integer> checkSumOfEachFile = rearrangedFiles.stream()
-                .map(file -> file.substring(0, file.indexOf('.'))).toList().stream()
-                .map(Main::calculateCheckSum).toList();
-*/
-        System.out.println(calculateCheckSum(movedFile.substring(0, movedFile.indexOf('.'))));
-        //System.out.println((Integer) checkSumOfEachFile.stream().mapToInt(Integer::intValue).sum());
+        List<FileSpace> decompressedDiscMap = decompressFormat(input);
+        List<FileSpace> defragmentedDiscMap = defragDiskMap(decompressedDiscMap);
+        double result = calculateCheckSum(defragmentedDiscMap.stream().filter(fileSpace -> fileSpace instanceof File).map(fileSpace -> (File) fileSpace).toList());
+        System.out.printf("Result: %.0f\n", result);
     }
 
     private static String loadInput() {
@@ -41,67 +30,77 @@ public class Main {
         }
     }
 
-    private static String decompressFormat(String discMap) {
-        StringBuilder stringBuilder = new StringBuilder();
+    private static List<FileSpace> decompressFormat(String discMap) {
+        List<FileSpace> decompressedFormat = new ArrayList<>();
         boolean isFileDigit = true;
         int id = 0;
         for (char digit : discMap.toCharArray()) {
             if (isFileDigit) {
-                stringBuilder.append(Strings.repeat(String.valueOf(id), Character.getNumericValue(digit)));
+                decompressedFormat.add(new File(id, Character.getNumericValue(digit)));
                 id++;
                 isFileDigit = false;
             } else {
-                stringBuilder.repeat('.', Character.getNumericValue(digit));
+                decompressedFormat.add(new FreeSpace(Character.getNumericValue(digit)));
                 isFileDigit = true;
             }
         }
-        return stringBuilder.toString();
+        return decompressedFormat;
     }
 
-    //have 2 lists
-    //build a new one where i copy every digit i find which is not a point to the new one
-    //if i find a point i replace it with a number from behind and the number from behind with a point
-    private static String moveFiles(String decompressedMap) {
-        StringBuilder transformedDisc = new StringBuilder();
-        CharacterIterator it = new StringCharacterIterator(decompressedMap);
-        while (it.current() != CharacterIterator.DONE) {
-            if (it.current() != '.') {
-                transformedDisc.append(it.current());
-            } else {
-                transformedDisc.append(decompressedMap.charAt(lastIndexOfFileNumber(decompressedMap)));
-                StringBuilder temporary = new StringBuilder(decompressedMap);
-                temporary.setCharAt(lastIndexOfFileNumber(decompressedMap), '.');
-                decompressedMap = temporary.toString();
+    private static List<FileSpace> defragDiskMap(List<FileSpace> decompressedMap) {
+        for (int currentPosition = 0; currentPosition < decompressedMap.size(); ++currentPosition) {
+            if (noMoreFilesLeft(currentPosition, decompressedMap)) {
+                return decompressedMap;
             }
-            it.next();
-            if (onlyFreeSpaceLeft(it.getIndex(), decompressedMap)) {
-                transformedDisc.repeat('.', decompressedMap.length() - it.getIndex());
-                return transformedDisc.toString();
+            if (decompressedMap.get(currentPosition) instanceof FreeSpace) {
+                moveFile(currentPosition, decompressedMap);
             }
         }
-        return transformedDisc.toString();
+        return decompressedMap;
     }
 
-    public static int lastIndexOfFileNumber(String discMap) {
-        for (int i = discMap.length() - 1; i > 0; --i) {
-            if (discMap.charAt(i) != '.') {
-                return i;
+    private static void moveFile(int position, List<FileSpace> decompressedMap) {
+        File fileToMove = getLastFileInDiskMapping(decompressedMap);
+        FileSpace freeSpace = decompressedMap.get(position);
+        if (fileToMove.space == freeSpace.space) {
+            decompressedMap.set(position, new File(fileToMove.id, fileToMove.space));
+            decompressedMap.set(decompressedMap.indexOf(fileToMove), new FreeSpace(fileToMove.space));
+        } else if (fileToMove.space > freeSpace.space) {
+            fileToMove.space = fileToMove.space - freeSpace.space;
+            decompressedMap.set(position, new File(fileToMove.id, freeSpace.space));
+            decompressedMap.addLast(new FreeSpace(fileToMove.space));
+        } else {
+            int difference = freeSpace.space - fileToMove.space;
+            decompressedMap.set(position, fileToMove);
+            decompressedMap.add(position + 1, new FreeSpace(difference));
+            decompressedMap.set(decompressedMap.lastIndexOf(fileToMove), new FreeSpace(fileToMove.space));
+        }
+    }
+
+    private static File getLastFileInDiskMapping(List<FileSpace> discMap) {
+        for (int i = discMap.size() - 1; i > 0; --i) {
+            if (discMap.get(i) instanceof File file && file.space > 0) {
+                return file;
             }
         }
-        return 0;
+        return null;
     }
 
-    public static boolean onlyFreeSpaceLeft(int position, String toCheck) {
-        if (position == toCheck.length() - 1) {
+    private static boolean noMoreFilesLeft(int position, List<FileSpace> toCheck) {
+        if (position == toCheck.size() - 1) {
             return true;
         }
-        return toCheck.substring(position).matches("^[.]*$");
+        return toCheck.subList(position, toCheck.size()).stream().allMatch(file -> file instanceof FreeSpace);
     }
 
-    private static int calculateCheckSum(String withoutFreeSpacePoints) {
-        int checkSum = 0;
-        for (int i = 1; i < withoutFreeSpacePoints.length(); ++i) {
-            checkSum += Character.getNumericValue(withoutFreeSpacePoints.charAt(i)) * i;
+    private static double calculateCheckSum(List<File> onlyFiles) {
+        double checkSum = 0;
+        int index = 0;
+        for (File onlyFile : onlyFiles) {
+            for (int i = 0; i < onlyFile.space; i++) {
+                checkSum += index * onlyFile.id;
+                index++;
+            }
         }
         return checkSum;
     }
