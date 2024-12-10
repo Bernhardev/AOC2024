@@ -13,10 +13,71 @@ import java.util.List;
 public class Main {
     public static void main(String[] args) {
         String input = loadInput();
+        processPartOne(input);
+        processPartTwo(input);
+    }
+
+    private static void processPartOne(String input) {
         List<FileSpace> decompressedDiscMap = decompressFormat(input);
         List<FileSpace> defragmentedDiscMap = defragDiskMap(decompressedDiscMap);
         double result = calculateCheckSum(defragmentedDiscMap.stream().filter(fileSpace -> fileSpace instanceof File).map(fileSpace -> (File) fileSpace).toList());
         System.out.printf("Result: %.0f\n", result);
+    }
+
+    private static void processPartTwo(String input) {
+        List<FileSpace> decompressedDiscMap = decompressFormat(input);
+        List<FileSpace> defragmentedDiscMap = defragPartTwo(decompressedDiscMap);
+        double result = calculateCheckSumForPartTwo(defragmentedDiscMap);
+        System.out.printf("Result Part Two: %.0f\n", result);
+    }
+
+    private static List<FileSpace> defragPartTwo(List<FileSpace> decompressedMap) {
+        for (int currentPosition = 0; currentPosition < decompressedMap.size(); ++currentPosition) {
+            if (decompressedMap.get(currentPosition) instanceof FreeSpace) {
+                moveFilesPartTwo(currentPosition, decompressedMap);
+            }
+        }
+        return decompressedMap;
+    }
+
+    private static void moveFilesPartTwo(int position, List<FileSpace> decompressedMap) {
+        FileSpace freeSpace = decompressedMap.get(position);
+        File fileToMove = findFittingFile(position, freeSpace.space, decompressedMap);
+        if(fileToMove == null) {
+            return;
+        }
+        if (fileToMove.space == freeSpace.space) {
+            decompressedMap.set(position, new File(fileToMove.id, fileToMove.space));
+            decompressedMap.set(decompressedMap.indexOf(fileToMove), new FreeSpace(fileToMove.space));
+        } else {
+            int difference = freeSpace.space - fileToMove.space;
+            decompressedMap.set(position, fileToMove);
+            decompressedMap.add(position + 1, new FreeSpace(difference));
+            decompressedMap.set(decompressedMap.lastIndexOf(fileToMove), new FreeSpace(fileToMove.space));
+        }
+    }
+
+    private static double calculateCheckSumForPartTwo(List<FileSpace> defragmentedDiscMap) {
+        double checkSum = 0;
+        int index = 0;
+        for (FileSpace fileSpace : defragmentedDiscMap) {
+            for (int i = 0; i < fileSpace.space; i++) {
+                if(fileSpace instanceof File file) {
+                    checkSum += index * file.id;
+                }
+                index++;
+            }
+        }
+        return checkSum;
+    }
+
+    private static File findFittingFile(int position, int freeSpace, List<FileSpace> discMap) {
+        for (int i = discMap.size() - 1; i > position; --i) {
+            if (discMap.get(i) instanceof File file && file.space <= freeSpace) {
+                return file;
+            }
+        }
+        return null;
     }
 
     private static String loadInput() {
